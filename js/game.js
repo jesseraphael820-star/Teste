@@ -175,6 +175,7 @@ export class Game {
     const k = settings.keys;
     this.handlers = {
       keydown: (e) => {
+        if (this.noLock && !this.chatOpen && !this.loadoutOpen && (e.code === 'KeyP' || e.code === 'Escape') && !this.paused) { this.locked = false; this.pause(true); return; }
         if (this.chatOpen) {
           if (e.code === 'Escape') { this.chatOpen = false; this.hud.closeChat(); this.lock(); }
           if (e.code === 'Enter') {
@@ -238,6 +239,7 @@ export class Game {
       },
       contextmenu: (e) => e.preventDefault(),
       pointerlockchange: () => {
+        if (this.noLock) return;
         this.locked = document.pointerLockElement === this.canvas;
         if (!this.locked && !this.chatOpen && !this.loadoutOpen && !this.freeCursor && this.running && !this.mode.over) this.pause(true);
       },
@@ -246,13 +248,28 @@ export class Game {
     };
     for (const ev of ['keydown', 'keyup', 'mousedown', 'mouseup', 'mousemove', 'contextmenu']) window.addEventListener(ev, this.handlers[ev]);
     document.addEventListener('pointerlockchange', this.handlers.pointerlockchange);
+    this.handlers.pointerlockerror = () => this.useCursorAim();
+    document.addEventListener('pointerlockerror', this.handlers.pointerlockerror);
     window.addEventListener('resize', this.handlers.resize);
     window.addEventListener('blur', this.handlers.blur);
     this.canvas.addEventListener('click', () => { if (!this.locked && !this.paused) this.lock(); });
   }
 
   lock() {
-    try { const r = this.canvas.requestPointerLock(); if (r?.catch) r.catch(() => {}); } catch { /* */ }
+    if (this.noLock) { this.locked = true; return; }
+    const fallback = () => this.useCursorAim();
+    try {
+      if (!this.canvas.requestPointerLock) return fallback();
+      const r = this.canvas.requestPointerLock();
+      if (r?.catch) r.catch(fallback);
+    } catch { fallback(); }
+  }
+
+  // páginas incorporadas podem bloquear a captura do mouse: mira pelo movimento do cursor
+  useCursorAim() {
+    if (this.noLock) return;
+    this.noLock = true; this.locked = true;
+    this.hud.toast('Captura do mouse indisponível aqui: mire movendo o mouse. P pausa.', 'gold');
   }
 
   pause(v) {
@@ -801,6 +818,7 @@ export class Game {
     audio.stopAmbience();
     for (const ev of ['keydown', 'keyup', 'mousedown', 'mouseup', 'mousemove', 'contextmenu']) window.removeEventListener(ev, this.handlers[ev]);
     document.removeEventListener('pointerlockchange', this.handlers.pointerlockchange);
+    document.removeEventListener('pointerlockerror', this.handlers.pointerlockerror);
     window.removeEventListener('resize', this.handlers.resize);
     window.removeEventListener('blur', this.handlers.blur);
     if (document.pointerLockElement) document.exitPointerLock();
